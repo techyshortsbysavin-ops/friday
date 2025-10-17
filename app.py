@@ -254,9 +254,8 @@ let chatHistory = [];
 let isListening = false;
 let recognition = null;
 let currentImage = null;
-let audioContext = null;
-let analyser = null;
 let visualizer = null;
+let audioSourceInitialized = false; // NEW FLAG
 
 // Initialize Speech Recognition
 if ('webkitSpeechRecognition' in window) {
@@ -284,12 +283,13 @@ if ('webkitSpeechRecognition' in window) {
 
 // Visualizer Class
 class CloudSphereVisualizer {
-    constructor(canvas) {
+    constructor(canvas, analyser) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
+        this.analyser = analyser; // Pass analyser to the class
         this.isRunning = false;
         this.time = 0;
-        this.dataArray = new Uint8Array(128);
+        this.dataArray = new Uint8Array(this.analyser ? this.analyser.fftSize : 128);
         this.resizeCanvas();
         window.addEventListener('resize', () => this.resizeCanvas());
     }
@@ -302,30 +302,27 @@ class CloudSphereVisualizer {
         this.radius = Math.min(this.canvas.width, this.canvas.height) * 0.20;
     }
     
-    start() {
-        if (this.isRunning) return;
-        this.isRunning = true;
-        this.draw();
-    }
-    
-    stop() {
-        this.isRunning = false;
-    }
-    
+    // Updated draw method to handle both scenarios
     draw() {
         if (!this.isRunning) return;
         requestAnimationFrame(() => this.draw());
         
-        if (analyser) {
-            analyser.getByteFrequencyData(this.dataArray);
-        }
-        
         let avg = 0;
-        for(let i = 0; i < this.dataArray.length / 4; i++) {
-            avg += this.dataArray[i];
+        if (this.analyser) {
+            this.analyser.getByteFrequencyData(this.dataArray);
+            for(let i = 0; i < this.dataArray.length / 4; i++) {
+                avg += this.dataArray[i];
+            }
+            avg = (avg / (this.dataArray.length / 4)) / 255;
+        } else {
+            // Simulated activity if no analyser is present (for TTS)
+            if (speechSynthesis.speaking) {
+                avg = (Math.sin(this.time * 2) + 1) / 2 * 0.5;
+            } else {
+                avg = 0;
+            }
         }
-        avg = (avg / (this.dataArray.length / 4)) / 255;
-        
+
         this.time += 0.05;
         
         this.ctx.fillStyle = 'rgba(10, 24, 40, 0.1)';
@@ -371,7 +368,8 @@ function startListening() {
     document.getElementById('mic-icon').name = 'mic';
     document.getElementById('mic-icon').style.color = '#00BFFF';
     document.getElementById('mic-label').textContent = 'Listening...';
-    if (visualizer) visualizer.start();
+    // Only start visualizer if audio source was initialized
+    if (visualizer && audioSourceInitialized) visualizer.start(); 
 }
 
 function stopListening() {
@@ -380,7 +378,8 @@ function stopListening() {
     document.getElementById('mic-icon').name = 'mic-outline';
     document.getElementById('mic-icon').style.color = '#9CA3AF';
     document.getElementById('mic-label').textContent = 'Voice';
-    if (visualizer) visualizer.stop();
+    // Only stop visualizer if audio source was initialized
+    if (visualizer && audioSourceInitialized) visualizer.stop(); 
 }
 
 function handleImageUpload(event) {
@@ -484,17 +483,24 @@ function showLoading(show) {
 
 function speakText(text) {
     if ('speechSynthesis' in window) {
+        // Clear any existing speech queue
+        window.speechSynthesis.cancel();
+        
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
         utterance.pitch = 0.9;
         utterance.volume = 1.0;
         
+        // **FIX: Temporarily comment out these lines to ensure TTS works without a mic setup**
+        // If audioSourceInitialized is false, the visualizer won't have the analyser
+        // We rely on the visualizer's internal check for speechSynthesis.speaking for a basic visualization.
+        
         utterance.onstart = () => {
-            if (visualizer) visualizer.start();
+             if (visualizer) visualizer.start();
         };
         
         utterance.onend = () => {
-            if (visualizer) visualizer.stop();
+             if (visualizer && !isListening) visualizer.stop();
         };
         
         speechSynthesis.speak(utterance);
@@ -503,25 +509,31 @@ function speakText(text) {
 
 // Initialize
 window.onload = async () => {
+    const canvas = document.getElementById('visualizer-canvas');
+    let analyser = null;
+
     // Setup audio context for visualizer
     try {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
         
+        // This line will throw an error if microphone permission is denied,
+        // which prevents audioSourceInitialized from being set.
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const source = audioContext.createMediaStreamSource(stream);
         source.connect(analyser);
+        audioSourceInitialized = true; // Set flag on success
         
-        const canvas = document.getElementById('visualizer-canvas');
-        visualizer = new CloudSphereVisualizer(canvas);
-        visualizer.start();
     } catch (error) {
-        console.log('Visualizer setup skipped:', error);
-        const canvas = document.getElementById('visualizer-canvas');
-        visualizer = new CloudSphereVisualizer(canvas);
-        visualizer.start();
+        console.warn('Microphone access denied or visualizer setup skipped:', error);
+        // If mic access is denied, audioSourceInitialized remains false.
     }
+    
+    // Initialize the visualizer with or without the analyser
+    // If analyser is null, it will fall back to a simulated animation.
+    visualizer = new CloudSphereVisualizer(canvas, analyser);
+    visualizer.start(); 
     
     document.getElementById('status').textContent = 'READY';
 };
