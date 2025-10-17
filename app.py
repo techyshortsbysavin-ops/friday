@@ -19,6 +19,7 @@ import time
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
+# This loads GEMINI_API_KEY for local development
 load_dotenv()
 
 # Initialize Flask app
@@ -26,19 +27,21 @@ app = Flask(__name__)
 CORS(app)
 
 # Configure Gemini AI
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
-if not GEMINI_API_KEY:
-    print("⚠️  ERROR: GEMINI_API_KEY not found in .env file!")
-    print("Please check your .env file and make sure it contains:")
-    print("GEMINI_API_KEY=your_actual_api_key")
-    exit(1)
+# The key is securely loaded from the environment (Vercel/Render provides it, .env provides it locally)
+GEMINI_API_KEY = os.environ.get('AIzaSyAdK3CFwaeWQaPGhAZKHjciwg4V-Kf52rQ')
 
-print(f"✅ API Key loaded: {GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}")
-genai.configure(api_key=GEMINI_API_KEY)
-
+# Check if the key exists before configuring
+if GEMINI_API_KEY:
+    print(f"✅ API Key loaded: {GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}")
+    genai.configure(api_key=GEMINI_API_KEY)
+else:
+    # This message appears if the key is missing in the environment
+    print("⚠️  ERROR: GEMINI_API_KEY not found in environment!")
+    print("⚠️  Using placeholder configuration, API calls will likely fail without GEMINI_API_KEY.")
+    
 # Initialize Gemini model
 chat_model = genai.GenerativeModel(
-    model_name='gemini-2.0-flash-exp',
+    model_name='gemini-2.5-flash',
     generation_config={
         'temperature': 0.9,
         'top_p': 0.95,
@@ -75,7 +78,7 @@ Current capabilities you should mention when relevant:
 
 Always be helpful, engaging, and make interactions feel natural and enjoyable."""
 
-# Store active chat sessions
+# Store active chat sessions (though Vercel doesn't maintain state well across requests)
 chat_sessions = {}
 
 # Rate limiting decorator
@@ -255,7 +258,7 @@ let isListening = false;
 let recognition = null;
 let currentImage = null;
 let visualizer = null;
-let audioSourceInitialized = false; // NEW FLAG
+let audioSourceInitialized = false; 
 
 // Initialize Speech Recognition
 if ('webkitSpeechRecognition' in window) {
@@ -286,10 +289,11 @@ class CloudSphereVisualizer {
     constructor(canvas, analyser) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.analyser = analyser; // Pass analyser to the class
+        this.analyser = analyser; 
         this.isRunning = false;
         this.time = 0;
-        this.dataArray = new Uint8Array(this.analyser ? this.analyser.fftSize : 128);
+        // Use a default size if analyser is not available
+        this.dataArray = new Uint8Array(this.analyser ? this.analyser.fftSize : 128); 
         this.resizeCanvas();
         window.addEventListener('resize', () => this.resizeCanvas());
     }
@@ -302,7 +306,6 @@ class CloudSphereVisualizer {
         this.radius = Math.min(this.canvas.width, this.canvas.height) * 0.20;
     }
     
-    // Updated draw method to handle both scenarios
     draw() {
         if (!this.isRunning) return;
         requestAnimationFrame(() => this.draw());
@@ -317,7 +320,8 @@ class CloudSphereVisualizer {
         } else {
             // Simulated activity if no analyser is present (for TTS)
             if (speechSynthesis.speaking) {
-                avg = (Math.sin(this.time * 2) + 1) / 2 * 0.5;
+                // Creates a smooth, pulsing animation when TTS is active
+                avg = (Math.sin(this.time * 2) + 1) / 2 * 0.5; 
             } else {
                 avg = 0;
             }
@@ -325,7 +329,8 @@ class CloudSphereVisualizer {
 
         this.time += 0.05;
         
-        this.ctx.fillStyle = 'rgba(10, 24, 40, 0.1)';
+        // Clear canvas with slight transparency for trailing effect
+        this.ctx.fillStyle = 'rgba(10, 24, 40, 0.1)'; 
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
         const currentRadius = this.radius * (1 + avg * 0.3);
@@ -333,6 +338,7 @@ class CloudSphereVisualizer {
         this.ctx.save();
         this.ctx.translate(this.centerX, this.centerY);
         
+        // Neon Glow Effect
         const glow = this.ctx.createRadialGradient(0, 0, currentRadius * 0.5, 0, 0, currentRadius * 1.5);
         glow.addColorStop(0, `rgba(0, 191, 255, ${0.6 + avg * 0.4})`);
         glow.addColorStop(0.5, 'rgba(0, 100, 200, 0.3)');
@@ -346,6 +352,24 @@ class CloudSphereVisualizer {
         this.ctx.fill();
         
         this.ctx.restore();
+    }
+    
+    start() {
+        if (!this.isRunning) {
+            this.isRunning = true;
+            this.draw();
+        }
+    }
+    
+    stop() {
+        this.isRunning = false;
+        // Optionally fade out the visualizer after stopping
+        setTimeout(() => {
+             if (!this.isRunning) {
+                 this.ctx.fillStyle = 'rgba(10, 24, 40, 1)';
+                 this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+             }
+        }, 500);
     }
 }
 
@@ -368,8 +392,8 @@ function startListening() {
     document.getElementById('mic-icon').name = 'mic';
     document.getElementById('mic-icon').style.color = '#00BFFF';
     document.getElementById('mic-label').textContent = 'Listening...';
-    // Only start visualizer if audio source was initialized
-    if (visualizer && audioSourceInitialized) visualizer.start(); 
+    // Only start visualizer if audio source was initialized OR if speech synthesis is speaking
+    if (visualizer && (audioSourceInitialized || speechSynthesis.speaking)) visualizer.start(); 
 }
 
 function stopListening() {
@@ -378,8 +402,8 @@ function stopListening() {
     document.getElementById('mic-icon').name = 'mic-outline';
     document.getElementById('mic-icon').style.color = '#9CA3AF';
     document.getElementById('mic-label').textContent = 'Voice';
-    // Only stop visualizer if audio source was initialized
-    if (visualizer && audioSourceInitialized) visualizer.stop(); 
+    // Stop visualizer only if TTS is not speaking
+    if (visualizer && !speechSynthesis.speaking) visualizer.stop(); 
 }
 
 function handleImageUpload(event) {
@@ -406,6 +430,11 @@ async function sendMessage() {
     const message = input.value.trim();
     
     if (!message && !currentImage) return;
+    
+    // 🔑 CRITICAL FIX: Trigger silent speech immediately upon user click.
+    // This pre-activates the browser's audio engine using the direct user action.
+    // This is the common workaround for browser Autoplay Policies.
+    speakText(' ', true); 
     
     // Add user message
     if (message) {
@@ -452,8 +481,8 @@ async function sendMessage() {
             addMessage(data.response, 'selsa');
             chatHistory.push({ role: 'assistant', content: data.response });
             
-            // Speak response
-            speakText(data.response);
+            // Speak response (This one should now work, as the engine is "awake")
+            speakText(data.response, false); 
         }
         
         clearImage();
@@ -481,7 +510,8 @@ function showLoading(show) {
     document.getElementById('loading-indicator').classList.toggle('hidden', !show);
 }
 
-function speakText(text) {
+// 🔊 UPDATED SPEAK FUNCTION: Handles silent activation for browser policy workaround
+function speakText(text, isActivation = false) {
     if ('speechSynthesis' in window) {
         // Clear any existing speech queue
         window.speechSynthesis.cancel();
@@ -489,21 +519,25 @@ function speakText(text) {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.rate = 1.0;
         utterance.pitch = 0.9;
-        utterance.volume = 1.0;
         
-        // **FIX: Temporarily comment out these lines to ensure TTS works without a mic setup**
-        // If audioSourceInitialized is false, the visualizer won't have the analyser
-        // We rely on the visualizer's internal check for speechSynthesis.speaking for a basic visualization.
+        // If this is a silent activation call (isActivation=true), set volume to 0.0001
+        utterance.volume = isActivation ? 0.0001 : 1.0; 
         
-        utterance.onstart = () => {
-             if (visualizer) visualizer.start();
-        };
-        
-        utterance.onend = () => {
-             if (visualizer && !isListening) visualizer.stop();
-        };
+        // Only attach visualizer events to the actual speaking call
+        if (!isActivation) {
+            utterance.onstart = () => {
+                 if (visualizer) visualizer.start();
+            };
+            
+            utterance.onend = () => {
+                 // Stop visualizer only if not immediately starting listening mode
+                 if (visualizer && !isListening) visualizer.stop(); 
+            };
+        }
         
         speechSynthesis.speak(utterance);
+    } else {
+        console.warn('Speech Synthesis not supported in this browser.');
     }
 }
 
@@ -512,27 +546,25 @@ window.onload = async () => {
     const canvas = document.getElementById('visualizer-canvas');
     let analyser = null;
 
-    // Setup audio context for visualizer
+    // Setup audio context for visualizer (uses mic, which is often denied/warned)
     try {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         analyser = audioContext.createAnalyser();
         analyser.fftSize = 256;
         
-        // This line will throw an error if microphone permission is denied,
-        // which prevents audioSourceInitialized from being set.
+        // Attempt to get microphone stream
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const source = audioContext.createMediaStreamSource(stream);
         source.connect(analyser);
         audioSourceInitialized = true; // Set flag on success
         
     } catch (error) {
-        console.warn('Microphone access denied or visualizer setup skipped:', error);
-        // If mic access is denied, audioSourceInitialized remains false.
+        console.warn('Microphone access denied or visualizer setup skipped. Using simulated visuals during TTS.', error);
     }
     
     // Initialize the visualizer with or without the analyser
-    // If analyser is null, it will fall back to a simulated animation.
     visualizer = new CloudSphereVisualizer(canvas, analyser);
+    // Start it once to show the background/idle state
     visualizer.start(); 
     
     document.getElementById('status').textContent = 'READY';
@@ -556,7 +588,7 @@ def health_check():
         'status': 'operational',
         'service': 'Selsa AI Web App',
         'timestamp': datetime.now().isoformat(),
-        'version': '3.1.0'
+        'version': '3.1.1' # Incrementing version for new deployment
     })
 
 
@@ -577,12 +609,13 @@ def chat():
         conversation_parts = []
         for msg in chat_history[-10:]:
             role = "user" if msg['role'] == 'user' else "model"
+            # Ensure parts is a list of dicts with text key
             conversation_parts.append({
                 'role': role,
-                'parts': [msg['content']]
+                'parts': [{'text': msg['content']}]
             })
         
-        # Start chat
+        # Start chat (using new history format)
         chat = chat_model.start_chat(history=conversation_parts)
         
         # Create prompt with personality
