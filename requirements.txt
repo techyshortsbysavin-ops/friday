@@ -1,0 +1,18 @@
+# Selsa AI Web Application - Dependencies
+
+# Core Web Framework
+flask==3.0.0
+flask-cors==4.0.0
+
+# Google AI (Gemini) - Updated for compatibility
+google-generativeai
+
+# Image Processing - Updated for Python 3.13 compatibility
+Pillow>=10.3.0
+
+# Utilities
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Production Server
+gunicorn==21.2.0
